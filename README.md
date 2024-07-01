@@ -60,6 +60,14 @@ The hardware leveragese the Li-Po Charger Boost circuit from sparkfun https://cd
 ![Image of the front of the final PCB with Battery](images/HexCalc_Large.jpeg)
 The keyboard uses a matrix of microswitches and diodes connected directly to the microcontroller, and the screen is just one of those cheap SPI TFT screens that I ordered from AliExpress.
 
+
+
+## Other Helpful Links
+* [Project Files on OSHW LAB](https://oshwlab.com/tyler.klein/hexcalc)
+* [Schematic](schematic/Schematic_HexCalc_2024-06-30.pdf)
+* [Bill of Materials](schematic/HexCalc_BOM_2024-06-30.csv)
+
+
 ## Current Status...
 * Electrically, the hardware seems to work. The only issue I've run into is that the holes on the footprint that I used are ever so slightly off. Honestly though, once you solder in the screen, you don't really need to screw in down. I may end up 3D-printing a shim to slot into the holes on both sides and ensure everything stays in place.
 * The code... well... the code all seems to work, but it is UGLY. Sorry about that. What's that saying? Make it work, THEN make it fast (and pretty). Seriously though. I could probably consolidate a bunch of functions and that would make it much more readable.
