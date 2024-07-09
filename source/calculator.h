@@ -27,7 +27,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 --- Description: ---
-This library is basically a calculatror finite state machine that manages
+This library works like a calculatror finite state machine that manages
 the state of the current calculations on a button by button level.
 */
 

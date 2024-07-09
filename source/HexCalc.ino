@@ -30,53 +30,141 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 --- Description: ---
 This file provides the main primary loop of the HexCalc module and
-displays all of the visualizations and menus. The code is definitely
-in the "make it work" stage and could probably use a pretty significant
-overhaul.
+displays all of the visualizations and menus.
 
 */
 
-Hardware    hw;         // Manages the keyboard presses
-Calculator  calc;
+Hardware    hw;                                                                // Manages the keyboard presses
+Calculator  calc;                                                              // The calculator finite state machine
 
 
 /*******************************************
 * Screen Defaults & Setup                  *
 *******************************************/
-
-// The pins for I2C are defined by the Wire-library. 
-// Library Assumes: SDA - PA2, SCL - PA3
-#define SCREEN_WIDTH   240            // OLED display width, in pixels
-#define SCREEN_HEIGHT  240            // OLED display height, in pixels
-#define OLED_RESET     -1             // Reset pin # (or -1 if sharing Arduino reset pin)
-
-#define SCREEN_VISIBLE_COLS 21        // The number of visible columns on the screen (not the entire buffer)
-#define SCREEN_BUFFER_COLS  42        // The number of columns in the buffer
-#define SCREEN_BUFFER_ROWS   8        // The number of rows in the buffer
-
-
 // SCREEN PINS:
-#define PIN_SCREEN_CLOCK PIN_PA6      // SPI Clock
-#define PIN_SCREEN_DATA  PIN_PA4      // SPI Data (MOSI)
-#define PIN_SCREEN_DC    PIN_PA3      // Data Command
-#define PIN_SCREEN_RESET PIN_PA2      // Reset
-#define PIN_SCREEN_BLK   PIN_PA1      // Blank Screen
+#define PIN_SCREEN_CLOCK PIN_PA6                                               // SPI Clock
+#define PIN_SCREEN_DATA  PIN_PA4                                               // SPI Data (MOSI)
+#define PIN_SCREEN_DC    PIN_PA3                                               // Data Command
+#define PIN_SCREEN_RESET PIN_PA2                                               // Reset
+#define PIN_SCREEN_BLK   PIN_PA1                                               // Blank Screen
 
-Adafruit_ST7789 screen(&SPI, -1, PIN_SCREEN_DC, PIN_SCREEN_RESET);
+#define SCREEN_WIDTH   240                                                     // Display width, in pixels
+#define SCREEN_HEIGHT  240                                                     // Display height, in pixels
+
+Adafruit_ST7789 screen(&SPI, -1, PIN_SCREEN_DC, PIN_SCREEN_RESET);             // Initiate the screen class
 
 /*******************************************
 * STYLES / COLORS                          *
 *******************************************/
-#define COLOR_NUM_BG 0x0821           // Color used in the background behind the main numbers
-#define COLOR_HEX_FG 0x07E0           // Color used in the foreground in hexidecimal mode
-#define COLOR_DEC_FG 0x20BF           // Color used in the foreground in decimal mode
-#define COLOR_OCT_FG 0xF8C3           // Color used in the foreground in octal mode
-#define COLOR_COL_FG 0xEF7D           // Color used for the color chips
-#define COLOR_GHOST  0x4162           // Color used for ghost digits
+#define COLOR_NUM_BG 0x0821                                                    // Color used in the background behind the main numbers
+#define COLOR_HEX_FG 0x07E0                                                    // Color used in the foreground in hexidecimal mode
+#define COLOR_DEC_FG 0x20BF                                                    // Color used in the foreground in decimal mode
+#define COLOR_OCT_FG 0xF8C3                                                    // Color used in the foreground in octal mode
+#define COLOR_COL_FG 0xEF7D                                                    // Color used for the color chips
+#define COLOR_GHOST  0x4162                                                    // Color used for ghost digits
 
-#define COLOR_RED    0xC000           // Color used for Red in the color menu
-#define COLOR_GREEN  0x0680           // Color used for Green in the color menu
-#define COLOR_BLUE   0x0018           // Color used for Blue in the color menu
+#define COLOR_RED    0xC000                                                    // Color used for Red in the color menu
+#define COLOR_GREEN  0x0680                                                    // Color used for Green in the color menu
+#define COLOR_BLUE   0x0018                                                    // Color used for Blue in the color menu
+
+uint16_t base_color = COLOR_COL_FG;                                            // Stores the currently selected foreground color
+
+/*******************************************
+* Temporary Variables                      *
+*******************************************/
+
+uint64_t old_val        = 0xFFFFFFFFFFFFFFFF;                                  // These variables track the state of the finite state
+uint64_t old_stored     = 0xFFFFFFFFFFFFFFFF;                                  // machine prior to pressing a button. This allows us
+uint8_t  old_op         = 0xFF;                                                // to render only portions of the screen after each key press.
+uint8_t  old_base       = 0xFF;                                                // A better way to do this would be to move this into the calculator.h
+uint8_t  old_color_mode = 0xFF;                                                // file and just add flags for everything that might have changed
+uint8_t  old_bit_depth  = 0xFF;                                                // Maybe I will do that later ### TO DO ###
+
+
+
+/*******************************************
+* Key Press Event Manager                  *
+*******************************************/
+
+#define MENU_BINARY 0                                                          // Binary Menu
+#define MENU_DEC    1                                                          // Decimal Menu
+#define MENU_COLOR  2                                                          // Color Selector Menu
+volatile uint8_t menu_mode = 0;                                                // Tracks which mode the menu is in (BINARY / DEC / COLOR)
+volatile uint8_t old_menu_mode = 0xFF;                                         // Tracks the old menu mode to identify changes in the mode between refreshes
+
+void manageKeyPress(){                                                         // Keypress Event Handler Function
+  bool refresh_screen = true;                                                  // Assume that we need to refresh the screen
+
+  switch( hw.last_pressed_key ){                                               // Check the value of the last pressed key
+    case KEY_0:         calc.enterDigit(0);     break;                         // If the user pressed a number key, then 
+    case KEY_1:         calc.enterDigit(1);     break;                         // pass the number to the calculator FSM
+    case KEY_2:         calc.enterDigit(2);     break;                         // It will manage the state for us.
+    case KEY_3:         calc.enterDigit(3);     break;                         // 
+    case KEY_4:         calc.enterDigit(4);     break;                         // 
+    case KEY_5:         calc.enterDigit(5);     break;                         // 
+    case KEY_6:         calc.enterDigit(6);     break;                         // 
+    case KEY_7:         calc.enterDigit(7);     break;                         // 
+    case KEY_8:         calc.enterDigit(8);     break;                         // 
+    case KEY_9:         calc.enterDigit(9);     break;                         // 
+    case KEY_A:         calc.enterDigit(10);    break;                         // 
+    case KEY_B:         calc.enterDigit(11);    break;                         // 
+    case KEY_C:         calc.enterDigit(12);    break;                         // 
+    case KEY_D:         calc.enterDigit(13);    break;                         // 
+    case KEY_E:         calc.enterDigit(14);    break;                         // 
+    case KEY_F:         calc.enterDigit(15);    break;                         // 
+    case KEY_00:        calc.enterDigit(0);  calc.enterDigit(0);  break;       // For double digits like 00 and FF, just run the same
+    case KEY_FF:        calc.enterDigit(15); calc.enterDigit(15); break;       // update command twice.
+
+    case KEY_EQUALS:    calc.equals();          break;                         // Most of the math functions just pass straight
+    case KEY_MULT:      calc.multiplyBy();      break;                         // through to the calculator's finite state machine.
+    case KEY_DIV:       calc.divideBy();        break;                         // Divide stored value by current value
+    case KEY_MINUS:     calc.minusBy();         break;                         // Subtract current value from stored value
+    case KEY_PLUS:      calc.plusBy();          break;                         // Add stored value to current value
+    case KEY_MOD:       calc.modBy();           break;                         // MOD stored value by current value
+
+    case KEY_XOR:       calc.xorWith();         break;                         // XOR current and stored values
+    case KEY_AND:       calc.andWith();         break;                         // AND current and stored values
+    case KEY_OR:        calc.orWith();          break;                         // OR  current and stored values
+    case KEY_NOR:       calc.norWith();         break;                         // NOR current and stored values
+
+    case KEY_ROL:       calc.ror();             break;                         // Rotate Left by 1 bit
+    case KEY_ROR:       calc.rol();             break;                         // Rotate Right by 1 bit
+    case KEY_LSHIFT:    calc.leftShift();       break;                         // Left Shift by 1 bit
+    case KEY_RSHIFT:    calc.rightShift();      break;                         // Right Shift by 1 bit
+    case KEY_X_ROL_Y:   calc.rolBy();           break;                         // Rotate Left by N bits
+    case KEY_X_ROR_Y:   calc.rorBy();           break;                         // Rotate Right by N bits
+    case KEY_X_LS_Y:    calc.leftShiftBy();     break;                         // Left Shift by N bits
+    case KEY_X_RS_Y:    calc.rightShiftBy();    break;                         // Right Shift by N bits
+
+    case KEY_1S:        calc.onesCompliment();  break;                         // 1's compliment
+    case KEY_2S:        calc.twosCompliment();  break;                         // 2's compliment
+    case KEY_BYTE_FLIP: calc.byteFlip();        break;                         // Reverses Byte Order
+    case KEY_WORD_FLIP: calc.wordFlip();        break;                         // Reverses Word Order
+
+    case KEY_CLR:       calc.clear();           break;                         // Clears out just the current value
+    case KEY_ALL_CLEAR: calc.allClear();        break;                         // Clears out the current value, stored value and operator
+
+    case KEY_R_DN:      calc.decRed();          break;                         // Decrement the red portion of a 16 or 24 bit color code
+    case KEY_G_DN:      calc.decGreen();        break;                         // Decrement the green portion of a 16 or 24 bit color code
+    case KEY_B_DN:      calc.decBlue();         break;                         // Decrement the blue portion of a 16 or 24 bit color code
+    case KEY_R_UP:      calc.incRed();          break;                         // Increment the red portion of a 16 or 24 bit color code
+    case KEY_G_UP:      calc.incGreen();        break;                         // Increment the green portion of a 16 or 24 bit color code
+    case KEY_B_UP:      calc.incBlue();         break;                         // Increment the blue portion of a 16 or 24 bit color code
+
+    case KEY_8_BIT:     calc.setBitDepth8();    break;                         // Set the current bit depth to 8 bits
+    case KEY_16_BIT:    calc.setBitDepth16();   break;                         // Set the current bit depth to 16 bits
+    case KEY_32_BIT:    calc.setBitDepth32();   break;                         // Set the current bit depth to 32 bits
+    case KEY_64_BIT:    calc.setBitDepth64();   break;                         // Set the current bit depth to 64 bits
+
+    case KEY_RGB_565:   calc.setColorMode565(); menu_mode = MENU_COLOR;  base_color = COLOR_COL_FG; break; // Switch into 565 16-bit color mode
+    case KEY_RGB_888:   calc.setColorMode888(); menu_mode = MENU_COLOR;  base_color = COLOR_COL_FG; break; // Switch into 888 24-bit color mode
+    case KEY_BASE_8:    calc.setBase8();        menu_mode = MENU_BINARY; base_color = COLOR_OCT_FG; break; // Switch into octal mode
+    case KEY_BASE_10:   calc.setBase10();       menu_mode = MENU_DEC;    base_color = COLOR_DEC_FG; break; // Switch into decimal mode
+    case KEY_BASE_16:   calc.setBase16();       menu_mode = MENU_BINARY; base_color = COLOR_HEX_FG; break; // Switch into hexidecimal mode
+    default: refresh_screen = false;                                           // If the user doesn't press a valid button, we don't need to refresh
+  }
+  if( refresh_screen ) renderScreen();                                         // Refresh the screen if we need to
+}
 
 
 /*******************************************
@@ -84,108 +172,31 @@ Adafruit_ST7789 screen(&SPI, -1, PIN_SCREEN_DC, PIN_SCREEN_RESET);
 *******************************************/
 
 void setup() {
-  screen.init(SCREEN_WIDTH, SCREEN_HEIGHT, SPI_MODE2);
-  pinMode( PIN_SCREEN_BLK, OUTPUT );
-  digitalWrite( PIN_SCREEN_BLK, HIGH );
+  screen.init(SCREEN_WIDTH, SCREEN_HEIGHT, SPI_MODE2);                         // Initialize the screen
+  pinMode( PIN_SCREEN_BLK, OUTPUT );                                           // Set the backlight pin to output mode
+  digitalWrite( PIN_SCREEN_BLK, HIGH );                                        // Turn the screen's backlight on
 
-  delay(10);
-  screen.setRotation(3);
-  screen.cp437(true);
-  screen.setCursor(0, 0);
-  screen.fillScreen(   ST77XX_BLACK );
-  screen.setTextColor( ST77XX_GREEN );
-  screen.setTextWrap(true);
+  delay(10);                                                                   // Give everything a few ms to get situated
+  screen.setRotation(3);                                                       // Set the screen rotation to 270 degrees
+  screen.fillScreen( ST77XX_BLACK );                                           // Blank out the screen
 
+  hw.setup();                                                                  // Initialize the hardware library (keyboard and such)
+  hw.onKeyPress( manageKeyPress );                                             // Add the keyboard handler function to react to keypress events
 
-  hw.setup();                                                                  // Initialize the hardware library
-  hw.onKeyPress( manageKeyPress );
-
-  renderScreen();
+  renderScreen();                                                              // Do the initial screen render event
 }
 
-#define MENU_BINARY 0 // Binary Menu
-#define MENU_DEC    1 // Decimal Menu
-#define MENU_COLOR  2 // Color Selector Menu
-volatile uint8_t menu_mode = 0;
-volatile uint8_t old_menu_mode = 0xFF;
 
-
-void manageKeyPress(){
-
-
-  bool refresh_screen = true;
-
-  switch( hw.last_pressed_key ){
-    case KEY_0:         calc.enterDigit(0);     break;
-    case KEY_1:         calc.enterDigit(1);     break;
-    case KEY_2:         calc.enterDigit(2);     break;
-    case KEY_3:         calc.enterDigit(3);     break;
-    case KEY_4:         calc.enterDigit(4);     break;
-    case KEY_5:         calc.enterDigit(5);     break;
-    case KEY_6:         calc.enterDigit(6);     break;
-    case KEY_7:         calc.enterDigit(7);     break;
-    case KEY_8:         calc.enterDigit(8);     break;
-    case KEY_9:         calc.enterDigit(9);     break;
-    case KEY_A:         calc.enterDigit(10);    break;
-    case KEY_B:         calc.enterDigit(11);    break;
-    case KEY_C:         calc.enterDigit(12);    break;
-    case KEY_D:         calc.enterDigit(13);    break;
-    case KEY_E:         calc.enterDigit(14);    break;
-    case KEY_F:         calc.enterDigit(15);    break;
-    case KEY_00:        calc.enterDigit(0);  calc.enterDigit(0);  break;
-    case KEY_FF:        calc.enterDigit(15); calc.enterDigit(15); break;
-
-    case KEY_EQUALS:    calc.equals();          break;
-    case KEY_MULT:      calc.multiplyBy();      break;
-    case KEY_DIV:       calc.divideBy();        break;
-    case KEY_MINUS:     calc.minusBy();         break;
-    case KEY_PLUS:      calc.plusBy();          break;
-    case KEY_MOD:       calc.modBy();           break;
-
-    case KEY_XOR:       calc.xorWith();         break;
-    case KEY_AND:       calc.andWith();         break;
-    case KEY_OR:        calc.orWith();          break;
-    case KEY_NOR:       calc.norWith();         break;
-
-    case KEY_ROL:       calc.ror();             break;
-    case KEY_ROR:       calc.rol();             break;
-    case KEY_LSHIFT:    calc.leftShift();       break;
-    case KEY_RSHIFT:    calc.rightShift();      break;
-    case KEY_X_ROL_Y:   calc.rolBy();           break;
-    case KEY_X_ROR_Y:   calc.rorBy();           break;
-    case KEY_X_LS_Y:    calc.leftShiftBy();     break;
-    case KEY_X_RS_Y:    calc.rightShiftBy();    break;
-
-    case KEY_1S:        calc.onesCompliment();  break;
-    case KEY_2S:        calc.twosCompliment();  break;
-    case KEY_BYTE_FLIP: calc.byteFlip();        break;
-    case KEY_WORD_FLIP: calc.wordFlip();        break;
-
-    case KEY_CLR:       calc.clear();           break;
-    case KEY_ALL_CLEAR: calc.allClear();        break;
-
-    case KEY_R_DN:      calc.decRed();          break;
-    case KEY_G_DN:      calc.decGreen();        break;
-    case KEY_B_DN:      calc.decBlue();         break;
-    case KEY_R_UP:      calc.incRed();          break;
-    case KEY_G_UP:      calc.incGreen();        break;
-    case KEY_B_UP:      calc.incBlue();         break;
-
-    case KEY_8_BIT:     calc.setBitDepth8();    break;
-    case KEY_16_BIT:    calc.setBitDepth16();   break;
-    case KEY_32_BIT:    calc.setBitDepth32();   break;
-    case KEY_64_BIT:    calc.setBitDepth64();   break;
-
-    case KEY_RGB_565:   calc.setColorMode565(); menu_mode = MENU_COLOR;  break;
-    case KEY_RGB_888:   calc.setColorMode888(); menu_mode = MENU_COLOR;  break;
-    case KEY_BASE_8:    calc.setBase8();        menu_mode = MENU_BINARY; break;
-    case KEY_BASE_10:   calc.setBase10();       menu_mode = MENU_DEC;    break;
-    case KEY_BASE_16:   calc.setBase16();       menu_mode = MENU_BINARY; break;
-    default: refresh_screen = false;
+/*******************************************
+* Draw Functions                           *
+*******************************************/
+void fillBox( uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint16_t color ){   // Fill a box
+  screen.setAddrWindow( x, y, w, h );                                         // Set the address area of the area to fill
+  for( uint16_t i = (w*h); i>0; i--){                                         // Count down from the total area of the box
+    screen.SPI_WRITE16( color );                                              // Write the color into the box
   }
-
-  if( refresh_screen ) renderScreen();
 }
+
 
 /*******************************************
 * Draw Tag    Functions                    *
@@ -206,544 +217,396 @@ void manageKeyPress(){
    0x3E: 0011 1110
    0x1C: 0001 1100
 */
-uint8_t left_char[6]  = { 0x1C, 0x3E, 0x7F, 0x7F, 0x7F, 0x7F };
-uint8_t right_char[6] = { 0x7F, 0x7F, 0x7F, 0x7F, 0x3E, 0x1C };
+uint8_t left_char[6]  = { 0x1C, 0x3E, 0x7F, 0x7F, 0x7F, 0x7F };                // A character bitmap that describes the rounded left side of the pill 
+uint8_t right_char[6] = { 0x7F, 0x7F, 0x7F, 0x7F, 0x3E, 0x1C };                // A character bitmap that describes the rounded right side of the pill
 
-uint64_t old_val        = 0xFFFFFFFFFFFFFFFF;
-uint64_t old_stored     = 0xFFFFFFFFFFFFFFFF;
-uint8_t  old_op         = 0xFF;
-uint8_t  old_base       = 0xFF;
-uint8_t  old_color_mode = 0xFF;
-uint8_t  old_bit_depth  = 0xFF;
+void drawTag( uint8_t x, uint8_t y, uint8_t scale_x, uint8_t scale_y, uint16_t fg_color, uint16_t bg_color, const char *str, uint8_t str_length, bool right_align = false ){
+  uint8_t widget_width  = CHAR_WIDTH  * str_length * scale_x + 2 * CHAR_WIDTH; // Determine the width of the tag widget
+  uint8_t widget_height = CHAR_HEIGHT * scale_y + 2;                           // Determine the height of the tag widget
+  int16_t str_index = 0;                                                       // Index of the current character in the value string
+  uint8_t colStep = 0;                                                         // Keeps track of the number of scaled pixel columns drawn so far
+  uint8_t rowStep = 0;                                                         // Keeps track of the number of scaled pixel rows drawn so far
+  uint8_t hPixStep = scale_x;                                                  // Keeps track of the number of pixels drawn in a scaled pixel (horizontally)
+  uint8_t vPixStep = scale_y;                                                  // Keeps track of the number of pixels drawn in a scaled pixel (vertically)
+  uint16_t font_index;                                                         // Points to the current character in the font array
+  if( right_align ) x -= widget_width;                                         // Update the starting point depending on whether we need to right-align the text
 
+  uint8_t line_left   =  x + 4;                                                // Calculate the left position of the rule that goes at the top/bottom of the pill
+  uint8_t line_length = (CHAR_WIDTH*str_length) * scale_x + 4;                 // Calculate the length of the rule that goes at the top/bottom of the pill
+  fillBox( line_left, y, line_length, 1, fg_color );                           // Draw a line on the top of the tag
+  fillBox( line_left, y + widget_height - 1, line_length, 1, fg_color );       // Draw a line on the bottom of the tag
 
+  screen.setAddrWindow( x, y+1, widget_width, widget_height-2 );               // Set the address window for the tag's label text
 
-// Before running this command make sure DC is high
-void drawTag( uint8_t x, uint8_t y, uint8_t scale_x, uint8_t scale_y, uint16_t fg_color, uint16_t bg_color, const char *lbl, uint8_t label_length, bool right_align = false ){
-  uint8_t widget_width  = CHAR_WIDTH  * label_length * scale_x + 2 * CHAR_WIDTH;
-  uint8_t widget_height = CHAR_HEIGHT * scale_y + 2;
-  int16_t colChar = 0;                                                         // 
-  uint8_t colStep = 0;
-  uint8_t rowStep = 0;                                                         // 
-  uint8_t hPixStep = scale_x;
-  uint8_t vPixStep = scale_y;
-  uint16_t charIndex = 0;
-  if( right_align ) x -= widget_width;
-
-  digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-
-
-  uint8_t line_left   =  x + 4;
-  uint8_t line_length = (CHAR_WIDTH*label_length) * scale_x + 4;
-  screen.setAddrWindow( line_left, y, line_length, 1 );
-  for( uint16_t i = line_length; i>0; i--){ screen.SPI_WRITE16( fg_color ); }  // Draw a line on top of the tag
-
-  screen.setAddrWindow( line_left, y + widget_height - 1, line_length, 1 );    // Draw a line on the bottom of the tag
-  for( uint16_t i = line_length; i>0; i--){ screen.SPI_WRITE16( fg_color ); }  
-
-  screen.setAddrWindow( x, y+1, widget_width, widget_height-2 ); 
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
-
-  for( uint8_t row = 0; row<widget_height-2; row++ ){                              // The outer loop goes through each column
-    colChar = -1;                                                              // Set the current column to zero
-    colStep = CHAR_WIDTH;
-    for( uint8_t col = 0; col<widget_width; col++ ){                           // 
-      if( colStep == CHAR_WIDTH ){                                             // See if we have reached the end of the columns in a character
+  for( uint8_t row = 0; row<widget_height-2; row++ ){                          // Loop through each row in the tag's label text
+    str_index = -1;                                                            // Set the current string index to the beginning
+    colStep = CHAR_WIDTH;                                                      // Set the colStep tracker to the end of the character to it resets
+    for( uint8_t col = 0; col<widget_width; col++ ){                           // Loop through each column in the tag's label text
+      if( colStep == CHAR_WIDTH ){                                             // See if we have reached the end of the current character's columns
         colStep = 0;                                                           // Reset the character column to zero
-        colChar++;                                                             // Increment the character index that points to the buffer
-        charIndex = lbl[ colChar-1 ] * CHAR_WIDTH;                             // Assumes 32 characters per row, 5 columns per char
+        str_index++;                                                           // Increment the character index that points to the buffer
+        font_index = str[ str_index-1 ] * CHAR_WIDTH;                          // To get the actual string index, subtract one (the 0'th character will be a border character)
       }
 
-      if( colChar == 0 ){
-        if( (left_char[colStep] & (1<<rowStep)) > 0 ){
-          screen.SPI_WRITE16( fg_color );
-        } else {
-          screen.SPI_WRITE16( ST77XX_BLACK );
-        }
-      } else if( colChar == label_length+1){
-        if( (right_char[colStep] & (1<<rowStep)) > 0 ){
-          screen.SPI_WRITE16( fg_color );
-        } else {
-          screen.SPI_WRITE16( ST77XX_BLACK );
-        }
-      } else {
-        if( (font5x7[charIndex + colStep] & (1<<rowStep)) > 0 ){
-          screen.SPI_WRITE16( bg_color );
-        } else {
-          screen.SPI_WRITE16( fg_color );
-        }
+      if( str_index == 0 ){                                                    // If it's the 0'th character draw the left_char bitmap
+        screen.SPI_WRITE16( (left_char[colStep] & (1<<rowStep)) > 0 ? fg_color : ST77XX_BLACK );
+      } else if( str_index == str_length+1){                                   // If it's the last character, draw the right_char bitmap
+        screen.SPI_WRITE16( (right_char[colStep] & (1<<rowStep)) > 0 ? fg_color : ST77XX_BLACK );
+      } else {                                                                 // For everything else, just draw the character from the font array
+        screen.SPI_WRITE16( (font5x7[font_index + colStep] & (1<<rowStep)) > 0 ? bg_color : fg_color );
       }
-      if( (colChar == 0) || (colChar == label_length+1) ){
-        colStep++;
-      } else {
-        hPixStep--;
-        if( hPixStep == 0 ){
-          colStep++;
-          hPixStep = scale_x;
+
+      if( (str_index == 0) || (str_index == str_length+1) ){                   // We don't want the width of the rounded ends to change with scale_x so if we are
+        colStep++;                                                             // in one of those characters, just increment colStep without worrying about hPixStep
+      } else {                                                                 // But if we are on one of the actual characters then
+        hPixStep--;                                                            // use hPixStep to track how many pixels we still have to render before moving
+        if( hPixStep == 0 ){                                                   // to the next column. We start at scale_x and decrement to keep things faster
+          colStep++;                                                           // Hit the end of the pixels in the column, so move to the next column in the character
+          hPixStep = scale_x;                                                  // Reset the pixel counter to scale_x
         }
       }
     }
-    vPixStep--;
-    if( vPixStep == 0 ){
-      rowStep++;
-      vPixStep = scale_y;
+    vPixStep--;                                                                // Just like with hPixStep, we track the vertical pixel stepping
+    if( vPixStep == 0 ){                                                       // Once vPixStep hits zero, we know we've reached the end of the row
+      rowStep++;                                                               // and we are ready to move onto the next row
+      vPixStep = scale_y;                                                      // Reset the vPixStep counter to scale_y
     }
   }
-  SPI.endTransaction();                                                        // Close out the SPI transaction
-
 }
 
 
+/*******************************************
+* Draw String Function                     *
+*******************************************/
+// This function draws a series of characters onto the screen in a pre-defined box size.
+// x, y          - Location of the top left corner of the bounding box
+// width, height - Size of the bounding box
+// max_scale     - The maximum horizontal scale factor for text
+// kerning       - The spacing between letters in the text
+// fg_color      - The color of the text
+// bg_color      - The background color behind the text
+// ghost_zeros   - Will change the color of leading zeros to COLOR_GHOST
+// str           - The pointer to the character array
+// str_length    - The number of characters in the array
 
+void drawString( uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t max_scale, uint8_t kerning, uint16_t fg_color, uint16_t bg_color, bool ghost_zeros, const char* str, uint8_t str_length ){
+
+  bool     is_leading_zero = ghost_zeros;                                      // Used during the loop to track if we are rendering a leading zero in the number
+  bool     is_comma        = false;                                            // Used during the loop to track if we are currently rendering a comma
+  int16_t  str_index = 0;                                                      // Index of the current character in the value string
+  uint8_t  col_width  = CHAR_WIDTH + kerning;                                  // The full width of a column with spacing
+  uint8_t  scale_x = width / (col_width * str_length);                         // Calculate the largest scale possible for the number of digits
+  uint8_t  scale_y = height / CHAR_HEIGHT;                                     // Calculate the largest height possible
+
+  if( scale_x == 0 ){                                                          // See if there are too many numbers for the size of the widget
+    scale_x = 1;                                                               // Force horizontal scale to 1
+    str_length = width / col_width;                                            // Truncate the number of digits
+  }
+  if( scale_x > max_scale ) scale_x = max_scale;
+  if( scale_y > (scale_x<<1) ) scale_y = scale_x << 1;                         // Ensure we don't breach a 2 to 1 scaling ratio (it's hard to)
+
+  uint8_t  val_width  = (str_length * col_width - kerning) * scale_x;          // The pixel width that the actual characters will consume
+  uint8_t  val_height = CHAR_HEIGHT * scale_y;                                 // The pixel height that the actual characters will consume
+
+  uint8_t  colStep = col_width;                                                // Keeps track of the number of scaled pixel columns drawn so far
+  uint8_t  rowStep = 0;                                                        // Keeps track of the number of scaled pixel rows drawn so far
+  uint8_t  hPixStep = scale_x;                                                 // Keeps track of the number of pixels drawn in a scaled pixel (horizontally)
+  uint8_t  vPixStep = scale_y;                                                 // Keeps track of the number of pixels drawn in a scaled pixel (vertically)
+  uint16_t font_index;                                                         // Points to the current character in the font array
+
+  fillBox( x, y, width-val_width, height, bg_color );                          // Fill in the box to the left of the type so gets cleared out
+  fillBox( x + width-val_width, y, val_width, height-val_height, bg_color );   // Fill in the box above the type so gets cleared out as it gets smaller
+
+  screen.setAddrWindow( x+width-val_width, y+height-val_height, val_width, val_height ); // Set the address area of the window to fill
+
+  for( uint8_t row = 0; row<val_height; row++ ){                               // The outer loop goes through each column
+    
+    str_index = 0;                                                             // Set the current column to the starting column defined in the select section above
+    is_leading_zero = true;                                                    // Since we started the line again, we have to reset the leading zero indicator for this row
+    colStep = col_width;                                                       // Reset colStep to the max value so it triggers the if statement at the beginning of the loop
+    
+    for( uint8_t col = 0; col<val_width; col++ ){                              // The outer loop goes through each column
+      
+      if( colStep == col_width ){                                              // See if we have reached the end of the columns in a character
+        colStep = 0;                                                           // Reset the character column to zero
+        font_index = str[ str_index ] * CHAR_WIDTH;                            // Assumes 6 columns per char
+        str_index++;                                                           // Increment the character index that points to the buffer
+
+        if( is_leading_zero ){                                                 // If haven't hit a number yet (still leading zeros)
+          if( (font_index != '0' * CHAR_WIDTH) && (font_index != ' ' * CHAR_WIDTH)) // See if we hit something other than a zero or a space
+            is_leading_zero = false;                                           // If we did, then set the is_leading_zero flag to false
+        }
+        is_comma = ( font_index == ',' * CHAR_WIDTH );                         // Set the is_comma flag if the current character is a comma
+      }
+
+      if( (colStep<CHAR_WIDTH) && ((font5x7[font_index + colStep] & (1<<rowStep)) > 0) ){ // See if the current pixel should be turned on per the font character bitmap
+        screen.SPI_WRITE16( (is_leading_zero || is_comma) ? COLOR_GHOST : fg_color );     // If comma / leading zero the use the ghost color. Otherwise use foreground color
+      } else {                                                                 // If the pixel isn't active, then we can
+        screen.SPI_WRITE16( bg_color );                                        // use the background color
+      }
+      
+      hPixStep--;                                                              // Decrement the horizontal pixel counter (for scaling)
+      if( hPixStep == 0 ){                                                     // Once pixel counter hits zero
+        colStep++;                                                             // Move to the next pixel
+        hPixStep = scale_x;                                                    // Reset the pixel counter to the horizontal scale (scale_x)
+      }
+    }
+    vPixStep--;                                                                // Decrement the vertical pixel counter (for scaling)
+    if( vPixStep == 0 ){                                                       // Once pixel counter hits zero
+      rowStep++;                                                               // Move to the next row
+      vPixStep = scale_y;                                                      // Reset the pixel counter to the vertical scale (scale_y)
+    }
+  }
+
+}
 
 /*******************************************
-* Draw Number Functions                    *
+* Draw Small Number Function               *
 *******************************************/
-void drawSmallNumber( uint8_t base, uint8_t x, uint8_t y, uint16_t fg_color, uint64_t val ){
-  char buffer[27] = {'0'};
+// This function draws a small version of the number (used for the stored value and the hex/oct values of the decimal screen)
+// base          - The numerical base to use to render the number (8, 10, 16)
+// x, y          - Location of the top left corner of the bounding box
+// width, height - Size of the bounding box
+// val           - The 64-bit numberical value to draw
 
+void drawSmallNumber( uint8_t base, uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint16_t fg_color, uint64_t val ){
+  char buffer[27] = {'0'};                                                     // Create a buffer to hold the string with the value to print to the screen
 
-  // Set the display settings based on the bit depth (number of digits) and the base. These will all be overwritten
-  uint8_t widget_top    = 20;
-  uint8_t widget_height = 28;           // The height of the numbers widget
-  uint8_t widget_width  = 180;
-  uint8_t pixel_width   = 1;            // The width of a font pixel (used for scaling the numbers)
-  uint8_t pixel_height  = 1;            // The height of a font pixel (used for scaling the nubmers)
-  uint8_t num_digits    = 1;            // The number of digits in the number
-  uint8_t spacing       = 1;            // The number of additional pixels to put between each number
-
-  // Temporary scratch variables
-  uint64_t tmp          = 0;            // A temporary variable used to hold the current value as it is continuously divided by 10
-  uint8_t  rem          = 0;            // A temporary variable used to hold the remainder of the tmp division
-  int16_t  colCharStart = -1;           // Tracks the current character position in the buffer that we are rendering
-
-  // Override the settings for the render loop based on the current state of the calculator (base & bitDepth)
-  if( 16 == base ){
+  if( 16 == base ){                                                            // If we are in base 16 mode
+    //Format the 64-bit value into a set of 4-nibble hexidecimal words
     sprintf(buffer, "%04X %04X %04X %04X", uint16_t(val>>48),uint16_t(val>>32),uint16_t(val>>16),uint16_t(val) );
-    switch( calc.bitDepth ){
-      case 8:  pixel_width = 2;  pixel_height = 3; num_digits = 2;   colCharStart = 16; spacing = 2; break;
-      case 16: pixel_width = 2;  pixel_height = 3; num_digits = 4;   colCharStart = 14; spacing = 1; break;
-      case 24: pixel_width = 2;  pixel_height = 3; num_digits = 7;   colCharStart = 11; spacing = 0; break;
-      case 32: pixel_width = 2;  pixel_height = 3; num_digits = 9;   colCharStart =  9; spacing = 1; break;
-      case 64: pixel_width = 1;  pixel_height = 2; num_digits = 19;  colCharStart = -1; spacing = 1; break;
+  
+    switch( calc.bitDepth ){                                                   // Use bit depth to determine how many digits to draw, and how large to make them
+      case 8:  drawString( x, y, width, height, 2, 2, fg_color, ST77XX_BLACK, true, &buffer[17],  2 ); break;     // Draw  8 bit value
+      case 16: drawString( x, y, width, height, 2, 1, fg_color, ST77XX_BLACK, true, &buffer[15],  4 ); break;     // Draw 16 bit value
+      case 24: drawString( x, y, width, height, 2, 0, fg_color, ST77XX_BLACK, true, &buffer[12],  7 ); break;     // Draw 24 bit value
+      case 32: drawString( x, y, width, height, 2, 1, fg_color, ST77XX_BLACK, true, &buffer[10],  9 ); break;     // Draw 32 bit value
+      case 64: drawString( x, y, width, height, 2, 1, fg_color, ST77XX_BLACK, true, &buffer[ 0], 19 ); break;     // Draw 64 bit value
     }
   } else if( 8 == base ){
-    sprintf(buffer, "%04o %04o %04o %04o", uint16_t((val>>36) & 0xFFF),uint16_t((val>>24) & 0xFFF),uint16_t((val>>12) & 0xFFF),uint16_t((val) & 0xFFF) );
+    //Format the 64-bit value into a set of 4-nibble octal words
+    sprintf(buffer, "%04o %04o %04o %04o", uint16_t((val>>36)&0xFFF),uint16_t((val>>24)&0xFFF),uint16_t((val>>12)&0xFFF),uint16_t((val)&0xFFF) );
 
-    switch( calc.bitDepth ){
-      case 8:  pixel_width = 2;  pixel_height = 3; num_digits = 2;   colCharStart = 16; spacing = 2; break;
-      case 16: pixel_width = 2;  pixel_height = 3; num_digits = 4;   colCharStart = 14; spacing = 1; break;
-      case 24: pixel_width = 2;  pixel_height = 3; num_digits = 7;   colCharStart = 11; spacing = 0; break;
-      case 32: pixel_width = 2;  pixel_height = 3; num_digits = 9;   colCharStart =  9; spacing = 1; break;
-      case 64: pixel_width = 1;  pixel_height = 2; num_digits = 19;  colCharStart = -1; spacing = 1; break;
+    switch( calc.bitDepth ){                                                   // Use bit depth to determine how many digits to draw, and how large to make them
+      case 8:  drawString( x, y, width, height, 2, 2, fg_color, ST77XX_BLACK, true, &buffer[17],  2 ); break;     // Draw  8 bit value
+      case 16: drawString( x, y, width, height, 2, 1, fg_color, ST77XX_BLACK, true, &buffer[15],  4 ); break;     // Draw 16 bit value
+      case 24: drawString( x, y, width, height, 2, 0, fg_color, ST77XX_BLACK, true, &buffer[12],  7 ); break;     // Draw 24 bit value
+      case 32: drawString( x, y, width, height, 2, 1, fg_color, ST77XX_BLACK, true, &buffer[10],  9 ); break;     // Draw 32 bit value
+      case 64: drawString( x, y, width, height, 2, 1, fg_color, ST77XX_BLACK, true, &buffer[ 0], 19 ); break;     // Draw 64 bit value
     }
-  } else {
-    num_digits = 0;
-    tmp = val;
-    for( int8_t i=26; i>=0; i-- ){
-      if( tmp > 0 ){
-        if( i % 4 == 3 ){
-          buffer[i] = ',';
-        } else {
-          rem = tmp % 10;
-          buffer[i] = 0x30 + rem; // character for "0" + [0..9]
-          tmp /= 10;
+  } else {                                                                     // Format as decimal
+    uint8_t  num_digits = 0;                                                   // Reset a counter for the number of digits in the base-10 number
+    uint64_t tmp = val;                                                        // Create a temporary storage for val
+    for( int8_t i=26; i>=0; i-- ){                                             // Loop through up to 26 digits (maximum allowed in 64-bit number)
+      if( tmp > 0 ){                                                           // Ensure tmp hasn't reached zero as we've removed digits
+        if( i % 4 == 3 ){                                                      // For every 3 digits, we want to add a comma
+          buffer[i] = ',';                                                     // Write a comma into the buffer
+        } else {                                                               // If we don't need a comma here
+          buffer[i] = 0x30 + (tmp % 10);                                       // Write a numeric character by adding the mod 10 remainder to the ASCII value for "0"  
+          tmp /= 10;                                                           // Divide tmp by 10 and do it all again
         }
-        num_digits++;
-      } else {
-        buffer[i] = 0x30;        // add a leading zero
+        num_digits++;                                                          // Keep track of the number of digits
+      } else {                                                                 // If tmp is zero now...
+        buffer[i] = 0x30;                                                      // Write leading zeros into the buffer
       }
     }
-    if( num_digits == 0 ) num_digits = 1;
-    if(        num_digits > 17 ){ pixel_width = 1; pixel_height = 2; spacing = 1; }
-      else if( num_digits > 11 ){ pixel_width = 2; pixel_height = 2; spacing = 1; }
-      else if( num_digits > 8  ){ pixel_width = 2; pixel_height = 3; spacing = 1; }
-      else if( num_digits > 4  ){ pixel_width = 2; pixel_height = 3; spacing = 1; }
-      else                      { pixel_width = 2; pixel_height = 3; spacing = 1; }
-
-    colCharStart = 26 - num_digits;
-  }
-
-  // Define some more temporary scratch variables to use in the rendering loop
-  bool     isLeadingZero = true;                                               // Used during the loop to track if we are rendering a leading zero in the number
-  bool     isComma       = false;                                              // Used during the loop to track if we are currently rendering a comma
-  int16_t  colChar = colCharStart;                                             // 
-  uint8_t  rowStep = 0;                                                        // 
-  uint8_t  charWidth = (CHAR_WIDTH + spacing) * pixel_width;                   // 
-  uint8_t  val_width = num_digits * charWidth - (spacing * pixel_width);       //
-  uint8_t  val_height = CHAR_HEIGHT * pixel_height;                            // Max of 4*7 = 28
-
-  uint8_t  colStep = CHAR_WIDTH + spacing;
-  uint8_t  hPixStep = pixel_width;
-  uint8_t  vPixStep = pixel_height;
-  uint16_t charIndex;
-
-  digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-  
-  // Fill in the box to the left of the type so gets cleared out
-  screen.setAddrWindow( x, y, widget_width-val_width, widget_height );         // Set the address area of the window to fill
-  for( uint16_t i = (widget_width-val_width) * widget_height; i>0; i--){
-        screen.SPI_WRITE16( ST77XX_BLACK );    
-  }
-  // Fill in the box above the type so gets cleared out as it gets smaller
-  screen.setAddrWindow( x+widget_width-val_width, y, val_width, widget_height-val_height ); // Set the address area of the window to fill
-  for( uint16_t i = val_width * (widget_height-val_height); i>0; i--){
-        screen.SPI_WRITE16( ST77XX_BLACK );    
-  }
-
-  screen.setAddrWindow( x+widget_width-val_width, y+widget_height-val_height, val_width, val_height );   // Set the address area of the window to fill
-
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
-
-
-  for( uint8_t row = 0; row<val_height; row++ ){                               // The outer loop goes through each column
-    colChar = colCharStart;                                                    // Set the current column to the starting column defined in the select section above
-    isLeadingZero = true;                                                      // Since we started the line again, we have to reset the leading zero indicator for this row
-    colStep = CHAR_WIDTH + spacing;                                            // Reset colStep to the max value so it triggers the if statement at the beginning of the loop
-    for( uint8_t col = 0; col<val_width; col++ ){                              // The outer loop goes through each column
-      if( colStep == CHAR_WIDTH + spacing ){                                   // See if we have reached the end of the columns in a character
-        colStep = 0;                                                           // Reset the character column to zero
-        colChar++;                                                             // Increment the character index that points to the buffer
-        charIndex = buffer[ colChar ] * 6;                                     // Assumes 32 characters per row, 5 columns per char
-
-        if( isLeadingZero ){                                                   // If haven't hit a number yet
-          if( (charIndex != '0' * CHAR_WIDTH) && (charIndex != ' ' * CHAR_WIDTH)) isLeadingZero = false; // See if the current charIndex is pointing to a zero
-        }
-        isComma = ( charIndex == ',' * CHAR_WIDTH );
-      }
-
-      if( (val != 0) && (colStep<CHAR_WIDTH) && ((font5x7[charIndex + colStep] & (1<<rowStep)) > 0) ){
-        screen.SPI_WRITE16( (isLeadingZero || isComma) ? COLOR_GHOST : fg_color );
-      } else {
-        screen.SPI_WRITE16( ST77XX_BLACK );
-      }
-      hPixStep--;
-      if( hPixStep == 0 ){
-        colStep++;
-        hPixStep = pixel_width;
-      }
-    }
-    vPixStep--;
-    if( vPixStep == 0 ){
-      rowStep++;
-      vPixStep = pixel_height;
-    }
-  }
-  SPI.endTransaction();                                                        // Close out the SPI transaction
-
-}
-
-
-void drawLargeNumber(){
-  char buffer[27] = {'0'};
-
-
-  // Set the display settings based on the bit depth (number of digits) and the base. These will all be overwritten
-  uint8_t widget_top    = 54;           // The vertical position of the numbers widget
-  uint8_t widget_height = 56;           // The height of the numbers widget
-  uint8_t pixel_width   = 1;            // The width of a font pixel (used for scaling the numbers)
-  uint8_t pixel_height  = 1;            // The height of a font pixel (used for scaling the nubmers)
-  uint8_t num_digits    = 1;            // The number of digits in the number
-  uint8_t spacing       = 1;            // The number of additional pixels to put between each number
-  uint16_t fg_color     = COLOR_HEX_FG; // Holds the current foreground color to use when rendering the number
-
-  // Temporary scratch variables
-  uint64_t tmp          = 0;            // A temporary variable used to hold the current value as it is continuously divided by 10
-  uint8_t  rem          = 0;            // A temporary variable used to hold the remainder of the tmp division
-  int16_t  colCharStart = -1;           // Tracks the current character position in the buffer that we are rendering
-
-  // Override the settings for the render loop based on the current state of the calculator (base & bitDepth)
-  if( 16 == calc.base ){
-    sprintf(buffer, "%04X%04X%04X%04X", uint16_t(calc.val_current>>48),uint16_t(calc.val_current>>32),uint16_t(calc.val_current>>16),uint16_t(calc.val_current) );
-    fg_color = (menu_mode == MENU_COLOR) ? COLOR_COL_FG : COLOR_HEX_FG;
-    switch( calc.bitDepth ){
-      case 8:  pixel_width = 16; pixel_height = 8; num_digits = 2;   colCharStart = 13; spacing = 2; break;
-      case 16: pixel_width = 8;  pixel_height = 8; num_digits = 4;   colCharStart = 11; spacing = 1; break;
-      case 24: pixel_width = 6;  pixel_height = 8; num_digits = 6;   colCharStart =  9; spacing = 0; break;
-      case 32: pixel_width = 4;  pixel_height = 8; num_digits = 8;   colCharStart =  7; spacing = 1; break;
-      case 64: pixel_width = 2;  pixel_height = 5; num_digits = 16;  colCharStart = -1; spacing = 1; break;
-    }
-  } else if( 8 == calc.base ){
-    sprintf(buffer, "%04o%04o%04o%04o", uint16_t((calc.val_current>>36) & 0xFFF),uint16_t((calc.val_current>>24) & 0xFFF),uint16_t((calc.val_current>>12) & 0xFFF),uint16_t((calc.val_current) & 0xFFF) );
-    fg_color = (menu_mode == MENU_COLOR) ? COLOR_COL_FG : COLOR_OCT_FG;
-    switch( calc.bitDepth ){
-      case 8:  pixel_width = 8;  pixel_height = 8; num_digits = 3;   colCharStart = 12; spacing = 2; break;
-      case 16: pixel_width = 5;  pixel_height = 8; num_digits = 6;   colCharStart =  9; spacing = 1; break;
-      case 24: pixel_width = 4;  pixel_height = 8; num_digits = 8;   colCharStart =  7; spacing = 1; break;
-      case 32: pixel_width = 3;  pixel_height = 8; num_digits = 11;  colCharStart =  4; spacing = 1; break;
-      case 64: pixel_width = 2;  pixel_height = 5; num_digits = 16;  colCharStart = -1; spacing = 1; break;
-    }
-  } else {
-    num_digits = 0;
-    tmp = calc.val_current;
-    fg_color = (menu_mode == MENU_COLOR) ? COLOR_COL_FG : COLOR_DEC_FG;
-    for( int8_t i=26; i>=0; i-- ){
-      if( tmp > 0 ){
-        if( i % 4 == 3 ){
-          buffer[i] = ',';
-        } else {
-          rem = tmp % 10;
-          buffer[i] = 0x30 + rem; // character for "0" + [0..9]
-          tmp /= 10;
-        }
-        num_digits++;
-      } else {
-        buffer[i] = 0x30;        // add a leading zero
-      }
-    }
-    if( num_digits == 0 ) num_digits = 1;
-    if(        num_digits > 17 ){ pixel_width = 1; pixel_height = 3; spacing = 1; }
-      else if( num_digits > 11 ){ pixel_width = 2; pixel_height = 4; spacing = 1; }
-      else if( num_digits > 8  ){ pixel_width = 3; pixel_height = 5; spacing = 1; }
-      else if( num_digits > 4  ){ pixel_width = 4; pixel_height = 8; spacing = 1; }
-      else                      { pixel_width = 8; pixel_height = 8; spacing = 1; }
-
-    colCharStart = 26 - num_digits;
-  }
-
-  // Define some more temporary scratch variables to use in the rendering loop
-  bool     isLeadingZero = true;                                               // Used during the loop to track if we are rendering a leading zero in the number
-  bool     isComma       = false;                                              // Used during the loop to track if we are currently rendering a comma
-  int16_t  colChar = colCharStart;                                             // 
-  uint8_t  rowStep = 0;                                                        // 
-  uint8_t  charWidth = (CHAR_WIDTH + spacing) * pixel_width;                   // 
-  uint8_t  val_width = num_digits * charWidth - (spacing * pixel_width);       //
-  uint8_t  val_height = CHAR_HEIGHT * pixel_height;                            // Max of 4*7 = 28
-
-  uint8_t  colStep = CHAR_WIDTH + spacing;
-  uint8_t  hPixStep = pixel_width;
-  uint8_t  vPixStep = pixel_height;
-  uint16_t charIndex;
-
-  digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-  
-  // Fill in the box to the left of the type so gets cleared out
-  screen.setAddrWindow( 0, widget_top, SCREEN_WIDTH-val_width, widget_height );         // Set the address area of the window to fill
-  for( uint16_t i = (240-val_width) * widget_height; i>0; i--){
-        screen.SPI_WRITE16( COLOR_NUM_BG );    
-  }
-  // Fill in the box above the type so gets cleared out as it gets smaller
-  screen.setAddrWindow( SCREEN_WIDTH-val_width, widget_top, val_width, widget_height-val_height ); // Set the address area of the window to fill
-  for( uint16_t i = val_width * (widget_height-val_height); i>0; i--){
-        screen.SPI_WRITE16( COLOR_NUM_BG );    
-  }
-
-  screen.setAddrWindow( SCREEN_WIDTH-val_width, widget_top+widget_height-val_height, val_width, val_height );   // Set the address area of the window to fill
-
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
-
-
-  for( uint8_t row = 0; row<val_height; row++ ){                               // The outer loop goes through each column
-    colChar = colCharStart;                                                    // Set the current column to the starting column defined in the select section above
-    isLeadingZero = true;                                                      // Since we started the line again, we have to reset the leading zero indicator for this row
-    colStep = CHAR_WIDTH + spacing;                                            // Reset colStep to the max value so it triggers the if statement at the beginning of the loop
-    for( uint8_t col = 0; col<val_width; col++ ){                              // The outer loop goes through each column
-      if( colStep == CHAR_WIDTH + spacing ){                                   // See if we have reached the end of the columns in a character
-        colStep = 0;                                                           // Reset the character column to zero
-        colChar++;                                                             // Increment the character index that points to the buffer
-        charIndex = uint16_t(buffer[ colChar ]) * 6;                           // Assumes 32 characters per row, 5 columns per char
-
-        if( isLeadingZero ){                                                   // If haven't hit a number yet
-          if( charIndex != '0' * CHAR_WIDTH ) isLeadingZero = false;           // See if the current charIndex is pointing to a zero
-        }
-        isComma = ( charIndex == ',' * CHAR_WIDTH );
-      }
-
-      if( (colStep<CHAR_WIDTH) && ((font5x7[charIndex + colStep] & (1<<rowStep)) > 0) ){
-        screen.SPI_WRITE16( (isLeadingZero || isComma) ? COLOR_GHOST : fg_color );
-      } else {
-        screen.SPI_WRITE16( COLOR_NUM_BG );
-      }
-      hPixStep--;
-      if( hPixStep == 0 ){
-        colStep++;
-        hPixStep = pixel_width;
-      }
-    }
-    vPixStep--;
-    if( vPixStep == 0 ){
-      rowStep++;
-      vPixStep = pixel_height;
-    }
-  }
-  SPI.endTransaction();                                                        // Close out the SPI transaction
-
-}
-
-
-// Draw a set of characters to the screen
-void drawChar( uint8_t x, uint8_t y, uint8_t scale_x, uint8_t scale_y, uint8_t spacing, uint16_t fg_color, uint16_t bg_color, const char *lbl, uint8_t label_length ){
-  uint8_t widget_width  = CHAR_WIDTH * label_length * scale_x + spacing * label_length;
-  uint8_t widget_height = CHAR_HEIGHT * scale_y;
-  uint8_t colChar = 0;                                                         // 
-  uint8_t colStep = 0;
-  uint8_t rowStep = 0;                                                         // 
-  uint8_t hPixStep = scale_x;
-  uint8_t vPixStep = scale_y;
-  uint16_t charIndex = 0;
-
-  digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-
-  screen.setAddrWindow( x, y, widget_width, widget_height ); 
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
-
-  for( uint8_t row = 0; row<widget_height; row++ ){                            // The outer loop goes through each column
-    colChar = 0;                                                              // Set the current column to zero
-    colStep = CHAR_WIDTH + spacing;
-    for( uint8_t col = 0; col<widget_width; col++ ){                           // 
-      if( colStep == (CHAR_WIDTH + spacing) ){                                 // See if we have reached the end of the columns in a character
-        colStep = 0;                                                           // Reset the character column to zero
-        charIndex = uint8_t(lbl[ colChar ]) * CHAR_WIDTH;                     // Assumes 32 characters per row, 5 columns per char
-        colChar++;                                                             // Increment the character index that points to the buffer
-      }
-
-      if( (colStep < CHAR_WIDTH) && ((font5x7[colStep + charIndex] & (1<<rowStep)) > 0) ){
-        screen.SPI_WRITE16( fg_color );
-      } else {
-        screen.SPI_WRITE16( bg_color );
-      }
-
-      hPixStep--;
-      if( hPixStep == 0 ){
-        colStep++;
-        hPixStep = scale_x;
-      }
-    }
-    vPixStep--;
-    if( vPixStep == 0 ){
-      rowStep++;
-      vPixStep = scale_y;
-    }
-  }
-  SPI.endTransaction();                                                        // Close out the SPI transaction
-
-}
-
-
-void drawBinWord( uint8_t x, uint8_t y, uint8_t num_dots, uint8_t val, uint16_t color_fg ){
-  uint8_t dot_width   = (num_dots == 4) ? 6 : 8;
-  uint8_t dot_spacing = (num_dots == 4) ? 2 : 3;
-  uint16_t widget_width = (dot_width + dot_spacing) * num_dots;
-  uint16_t widget_height = CHAR_HEIGHT * 2;
-  char buffer[2] = {0};
-  sprintf(buffer, "%01X", val);
-
-  drawChar( x, y, 2, 2, 0, color_fg, ST77XX_BLACK, buffer, 1 );
-
-  digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-  screen.setAddrWindow( x + 15, y, widget_width, widget_height );              // Set the address area of the window to fill
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
-
-  uint8_t colNum = 0;
-  uint8_t bit_num = num_dots - 1;
-  for( uint16_t i = widget_width * widget_height; i>0; i--){
-    if( val & (1 << bit_num) ){
-      screen.SPI_WRITE16( colNum < dot_width ? COLOR_COL_FG : ST77XX_BLACK );
-    } else {
-      screen.SPI_WRITE16( colNum < dot_width ? COLOR_GHOST : ST77XX_BLACK );
-    }
-    colNum++;
-    if( colNum == (dot_width + dot_spacing) ){
-      colNum = 0;
-      if( bit_num-- == 0 ) bit_num = num_dots-1;
-    }
-  }  
-  SPI.endTransaction();                                                        // Close out the SPI transaction
-}
-
-void drawBinary( uint8_t x, uint8_t y, bool full_refresh ){
-  uint8_t spacing_x = 50;
-  uint8_t spacing_y = 28;
-  char buffer[3] = {0};
-
-  uint8_t word = 0;
-  for( uint8_t row = 0; row < 4; row++ ){
-    for( uint8_t col = 0; col < 4; col++ ){
-      if( (15-word) < (calc.bitDepth >> 2) ){
-        if( full_refresh || (( (calc.val_current >> ((15 - (row * 4 + col)) * 4)) & 0xF ) != ( (old_val >> ((15 - (row * 4 + col)) * 4)) & 0xF )) ){
-          drawBinWord( x + col * spacing_x + 40, y + row * spacing_y, 4, (calc.val_current >> ((15 - (row * 4 + col)) * 4)) & 0xF, COLOR_HEX_FG );
-        }
-      }
-      word++;
-    }
-  }
-
-  for( uint8_t i=0; i<4; i++ ){
-    buffer[0] = (calc.bitDepth >> 3) > (i*2) + 1 ? (calc.val_current >> (i * 16 + 8)) & 0xFF : 0x00;
-    buffer[1] = (calc.bitDepth >> 3) > (i*2)     ? (calc.val_current >> (i * 16)) & 0xFF     : 0x00;
-    drawChar( x, y + spacing_y * (3-i), 2, 2, 2, COLOR_COL_FG, ST77XX_BLACK, buffer, 2 );
+    if( num_digits == 0 ) num_digits = 1;                                      // We still want at least 1 digit even if the number is zero
+    drawString( x, y, width, height, 2, 1, fg_color, ST77XX_BLACK, true, &buffer[27-num_digits], num_digits ); // Draw the number to the screen
   }
 }
 
-void drawOctalBinary( uint8_t x, uint8_t y, bool full_refresh ){
-  uint8_t spacing_x = 50;
-  uint8_t spacing_y = 28;
-  char buffer[3] = {0};
+void drawLargeNumber( uint8_t base, uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint16_t fg_color, uint64_t val ){
+  char buffer[27] = {'0'};                                                     // Create a buffer to hold the string with the value to print to the screen
 
-  for( uint8_t row = 0; row < 4; row++ ){
-    for( uint8_t col = 0; col < 4; col++ ){
-      if( full_refresh || (( (calc.val_current >> ((15 - (row * 4 + col)) * 3)) & 0b111 ) != ( (old_val >> ((15 - (row * 4 + col)) * 3)) & 0b111 )) ){
-        drawBinWord( x + col * spacing_x + 40, y + row * spacing_y, 3, (calc.val_current >> ((15 - (row * 4 + col)) * 3)) & 0b111, COLOR_OCT_FG );
+  if( 16 == base ){                                                            // If we are in base 16 mode
+    //Format the 64-bit value into a set of 4-nibble hexidecimal words (no spaces between them)
+    sprintf(buffer, "%04X%04X%04X%04X", uint16_t(calc.val_current>>48),uint16_t(calc.val_current>>32),uint16_t(calc.val_current>>16),uint16_t(val) );
+    
+    switch( calc.bitDepth ){                                                   // Use bit depth to determine how many digits to draw, and how large to make them
+      case 8:  drawString( x, y, width, height, 10, 2, fg_color, COLOR_NUM_BG, true, &buffer[14],  2 ); break;     // Draw  8 bit value
+      case 16: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[12],  4 ); break;     // Draw 16 bit value
+      case 24: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[10],  6 ); break;     // Draw 24 bit value
+      case 32: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[ 8],  8 ); break;     // Draw 32 bit value
+      case 64: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[ 0], 16 ); break;     // Draw 64 bit value
+    }
+  } else if( 8 == base ){
+    //Format the 64-bit value into a set of 4-nibble octal words (no spaces)
+    sprintf(buffer, "%04o%04o%04o%04o", uint16_t((calc.val_current>>36) & 0xFFF),uint16_t((calc.val_current>>24) & 0xFFF),uint16_t((calc.val_current>>12) & 0xFFF),uint16_t(val & 0xFFF) );
+    
+    switch( calc.bitDepth ){                                                   // Use bit depth to determine how many digits to draw, and how large to make them
+      case 8:  drawString( x, y, width, height, 10, 2, fg_color, COLOR_NUM_BG, true, &buffer[13],  3 ); break;     // Draw  8 bit value
+      case 16: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[10],  6 ); break;     // Draw 16 bit value
+      case 24: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[ 8],  8 ); break;     // Draw 24 bit value
+      case 32: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[ 5], 11 ); break;     // Draw 32 bit value
+      case 64: drawString( x, y, width, height, 10, 1, fg_color, COLOR_NUM_BG, true, &buffer[ 0], 16 ); break;     // Draw 64 bit value
+    }
+  } else {                                                                     // Format as decimal
+    uint8_t  num_digits = 0;                                                   // Reset a counter for the number of digits in the base-10 number
+    uint64_t tmp = val;                                                        // Create a temporary storage for val
+    for( int8_t i=26; i>=0; i-- ){                                             // Loop through up to 26 digits (maximum allowed in 64-bit number)
+      if( tmp > 0 ){                                                           // Ensure tmp hasn't reached zero as we've removed digits
+        if( i % 4 == 3 ){                                                      // For every 3 digits, we want to add a comma
+          buffer[i] = ',';                                                     // Write a comma into the buffer
+        } else {                                                               // If we don't need a comma here
+          buffer[i] = 0x30 + (tmp % 10);                                       // Write a numeric character by adding the mod 10 remainder to the ASCII value for "0"  
+          tmp /= 10;                                                           // Divide tmp by 10 and do it all again
+        }
+        num_digits++;                                                          // Keep track of the number of digits
+      } else {                                                                 // If tmp is zero now...
+        buffer[i] = 0x30;                                                      // Write leading zeros into the buffer
       }
     }
-  }
+    if( num_digits == 0 ) num_digits = 1;                                      // We still want at least 1 digit even if the number is zero
 
-  for( uint8_t i=0; i<4; i++ ){
-    buffer[0] = (calc.val_current >> (i * 16 + 8)) & 0xFF;
-    buffer[1] = (calc.val_current >> (i * 16)) & 0xFF;
-    drawChar( x, y + spacing_y * (3-i), 2, 2, 2, COLOR_COL_FG, COLOR_NUM_BG, buffer, 2 );
+    drawString( x, y, width, height, 8, 1, fg_color, ST77XX_BLACK, true, &buffer[27-num_digits], num_digits ); // Draw the number to the screen
   }
 }
 
 /*******************************************
-* Color Menu Render Function               *
+* Draw Nibble                              *
 *******************************************/
+// This function draws a set of dots onto the screen representing a single binary nibble
+// x, y     - Location of the top left corner of the bounding box
+// num_dots - The number of binary digits (can be either 3 or 4)
+// fg_color - The color to use to draw active dots
+// val      - The 64-bit numberical value to draw
 
-// Value needs to be between 0 and 255
-void drawProgressBar( uint8_t x, uint8_t y, uint8_t height, uint8_t width, uint16_t val, uint16_t fg_color, uint16_t bg_color ){
-  digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-  screen.setAddrWindow( x, y, width, height );                                 // Set the address area of the window to fill
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
+void drawNibble( uint8_t x, uint8_t y, uint8_t num_dots, uint16_t fg_color, uint8_t val ){
+  uint8_t dot_width   = (num_dots == 4) ? 6 : 8;                               // Set the dot width depending on whether num_dots is 3 or 4
+  uint8_t dot_spacing = (num_dots == 4) ? 2 : 3;                               // Set the spacing between dots depending on whether num_dots is 3 or 4
+  uint16_t widget_width = (dot_width + dot_spacing) * num_dots;                // Determine the total width of the visualization
+  uint16_t widget_height = CHAR_HEIGHT * 2;                                    // Determine the total height of the visualization
+  char buffer[2] = {0};                                                        // A buffer to store the word value's character
 
-  uint8_t bar_width = (val * width) >> 8;
+  sprintf(buffer, "%01X", val);                                                // Format val as a 1-digit hexidecimal value
+  drawString( x, y, 12, widget_height, 2, 0, fg_color, ST77XX_BLACK, false, buffer, 1 ); // Draw the value onto the screen
 
-  uint8_t colNum = 0;
-  for( uint16_t i = width * height; i>0; i--){
-    screen.SPI_WRITE16( colNum < bar_width ? fg_color : bg_color );
-    if( ++colNum == width ) colNum = 0;
+  screen.setAddrWindow( x + 15, y, widget_width, widget_height );              // Set the address area of the window to fill
+
+  uint8_t colNum = 0;                                                          // Track the current column
+  uint8_t bit_num = num_dots - 1;                                              // Track the current bit
+  for( uint16_t i = widget_width * widget_height; i>0; i--){                   // Loop through all of the pixels in the widget's area
+    if( val & (1 << bit_num) ){                                                // If the current bit of val is a 1
+      screen.SPI_WRITE16( colNum < dot_width ? COLOR_COL_FG : ST77XX_BLACK );  // Then draw the a white dot (or black in the space between the dots)
+    } else {                                                                   // If the current bit of val is a zero
+      screen.SPI_WRITE16( colNum < dot_width ? COLOR_GHOST : ST77XX_BLACK );   // Then draw the a ghost dot (or black in the space between the dots)
+    }
+    colNum++;                                                                  // Increment the column
+    if( colNum == (dot_width + dot_spacing) ){                                 // If we hit the end of a dot & space 
+      colNum = 0;                                                              // Reset the column counter
+      if( bit_num-- == 0 ) bit_num = num_dots-1;                               // Decrement the bit_num, and if we hit zero, set it back to the number of dots
+    }
   }  
-  SPI.endTransaction();   
 }
 
-void drawColorMenu( uint8_t x, uint8_t y){
-  bool is565 = calc.color_mode == RGB_565;
-  uint8_t redVal   = is565 ? (calc.val_current >> 11) & 0b11111  : (calc.val_current >> 16) & 0xFF;
-  uint8_t greenVal = is565 ? (calc.val_current >> 5)  & 0b111111 : (calc.val_current >> 8)  & 0xFF;
-  uint8_t blueVal  = is565 ? (calc.val_current >> 0)  & 0b11111  : (calc.val_current >> 0)  & 0xFF;
-  
-  uint16_t color_565 = is565 ? calc.val_current & 0xFFFF : ( ((redVal >> 3) << 11) | ((greenVal >> 2)<<5) | (blueVal >> 3) );
+/*******************************************
+* Draw Hex Binary                          *
+*******************************************/
+// This function visualizes a hexidecimal binary number as a set of nibbles and their representative characters onto the screen
+// x, y         - Location of the top left corner of the bounding box
+// full_refresh - Completely re-draws all of the nibbles if true. Otherwise, only draws nibbles that change 
+// val          - The 64-bit numberical value to draw
 
-  char buffer[3] = {0};
+void drawHexBinary( uint8_t x, uint8_t y, bool full_refresh, uint64_t val ){                    
+  uint8_t spacing_x = 50;                                                      // Horizontal grid spacing of the nibbles visualizations
+  uint8_t spacing_y = 28;                                                      // Vertical grid spacing of the nibble visualizations
+  char buffer[3] = {0};                                                        // Buffer for the Byte ASCII visualizations
 
-  sprintf(buffer, "%02X", redVal);
-  drawChar( x, y+10, 2, 2, 1, COLOR_RED, ST77XX_BLACK, buffer, 2 );
-  drawProgressBar(x+40, y+15, 4, 80, is565 ? redVal   << 3 : redVal,   COLOR_RED,   COLOR_NUM_BG );
-
-  sprintf(buffer, "%02X", greenVal);
-  drawChar( x, y+45, 2, 2, 1, COLOR_GREEN, ST77XX_BLACK, buffer, 2 );
-  drawProgressBar(x+40, y+50, 4, 80, is565 ? greenVal << 2 : greenVal, COLOR_GREEN, COLOR_NUM_BG );
-
-  sprintf(buffer, "%02X", blueVal);
-  drawChar( x, y+80, 2, 2, 1, COLOR_BLUE, ST77XX_BLACK, buffer, 2 );
-  drawProgressBar(x+40, y+85, 4, 80, is565 ? blueVal  << 3 : blueVal,  COLOR_BLUE,  COLOR_NUM_BG );
-
-  digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-  screen.setAddrWindow( x+130, y+10, 100, 100 );                           // Set the address area of the window to fill
-  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
-  for( uint16_t i = 100*100; i>0; i--){
-    screen.SPI_WRITE16( color_565 );    
+  uint8_t nibble = 0;                                                          // Set the counter for the current nibble to zero
+  for( uint8_t row = 0; row < 4; row++ ){                                      // Loop through the rows of nibbles
+    for( uint8_t col = 0; col < 4; col++ ){                                    // Loop through the columns of nibble 
+      if( (15-nibble) < (calc.bitDepth >> 2) ){                                // See if we need to show this nibble based on the bit depth
+        if( full_refresh || (( (val >> ((15 - (row * 4 + col)) * 4)) & 0xF ) != ( (old_val >> ((15 - (row * 4 + col)) * 4)) & 0xF )) ){ // See if the nibble should be refreshed
+          drawNibble( x + col * spacing_x + 40, y + row * spacing_y, 4, COLOR_HEX_FG, (val >> ((15 - (row * 4 + col)) * 4)) & 0xF );    // Draw the nibble
+        }
+      }
+      nibble++;                                                                // Increment the number of nibbles
+    }
   }
 
+  for( uint8_t i=0; i<4; i++ ){                                                // Loop through the rows
+    buffer[0] = (calc.bitDepth >> 3) > (i*2) + 1 ? (val >> (i * 16 + 8)) & 0xFF : 0x00; // Capture the second byte of val as a character in the buffer
+    buffer[1] = (calc.bitDepth >> 3) > (i*2)     ? (val >> (i * 16)) & 0xFF     : 0x00; // Capture the first byte of val as a character in the buffer
+    drawString( x, y + spacing_y * (3-i)-6, 30, 24, 3, 1, COLOR_COL_FG, ST77XX_BLACK, false, buffer, 2 ); // Draw the buffer onto the screen
+  }
+}
+
+
+/*******************************************
+* Draw Octal Binary                        *
+*******************************************/
+// This function visualizes a hexidecimal binary number as a set of nibbles and their representative characters onto the screen
+// x, y         - Location of the top left corner of the bounding box
+// full_refresh - Completely re-draws all of the nibbles if true. Otherwise, only draws nibbles that change 
+// val          - The 64-bit numberical value to draw
+
+void drawOctalBinary( uint8_t x, uint8_t y, bool full_refresh, uint64_t val ){
+  uint8_t spacing_x = 50;                                                      // Horizontal grid spacing of the nibbles visualizations
+  uint8_t spacing_y = 28;                                                      // Vertical grid spacing of the nibble visualizations
+  char buffer[3] = {0};                                                        // Buffer for the Byte ASCII visualizations
+
+  for( uint8_t row = 0; row < 4; row++ ){                                      // Loop through the rows of nibbles
+    for( uint8_t col = 0; col < 4; col++ ){                                    // Loop through the columns of nibble 
+      if( full_refresh || (( (val >> ((15 - (row * 4 + col)) * 3)) & 0b111 ) != ( (old_val >> ((15 - (row * 4 + col)) * 3)) & 0b111 )) ){ // See if the nibble should be refreshed
+        drawNibble( x + col * spacing_x + 40, y + row * spacing_y, 3, COLOR_OCT_FG, (val >> ((15 - (row * 4 + col)) * 3)) & 0b111 );      // Draw the nibble
+      }
+    }
+  }
+
+  for( uint8_t i=0; i<4; i++ ){
+    buffer[0] = (val >> (i * 16 + 8)) & 0xFF;                                  // Capture the second byte of val as a character in the buffer
+    buffer[1] = (val >> (i * 16)) & 0xFF;                                      // Capture the first byte of val as a character in the buffer
+    drawString( x, y + spacing_y * (3-i)-6, 30, 24, 3, 1, COLOR_COL_FG, ST77XX_BLACK, false, buffer, 2 ); // Draw the buffer onto the screen
+  }
+}
+
+/*******************************************
+* Draw Progress Bar                        *
+*******************************************/
+// This function draws a progress bar onto the screen
+// x, y          - Location of the top left corner of the bounding box
+// width, height - Size of the bounding box
+// val           - A value between 0 and 255 to represent in the progress bar
+
+void drawProgressBar( uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint16_t fg_color, uint16_t bg_color, uint16_t val ){
+  uint8_t bar_width = (val * width) >> 8;                                      // Calculate the inner bar width
+  uint8_t colNum = 0;                                                          // Track the current column being rendered
+  screen.setAddrWindow( x, y, width, height );                                 // Set the address area of the window to fill
+  for( uint16_t i = width * height; i>0; i--){                                 // Loop through the pixels in the window area
+    screen.SPI_WRITE16( colNum < bar_width ? fg_color : bg_color );            // Write the foreground color if within the inner box otherwise the background color
+    if( ++colNum == width ) colNum = 0;                                        // Increment column and reset to zero if it hits the width of the widget
+  }  
+}
+
+/*******************************************
+* Draw Color Menu                          *
+*******************************************/
+// This function draws the color visualization menu 
+// x, y          - Location of the top left corner of the bounding box
+// is565         - Indicates if the color is 16-bit 565 color mode (vs 24-bit 888 color mode)
+// val           - A 16-bit or 24-bit color value
+
+void drawColorMenu( uint8_t x, uint8_t y, bool is565, uint64_t val ){
+  uint8_t redVal   = is565 ? (val >> 11) & 0b11111  : (val >> 16) & 0xFF;      // Calculate the red value (depending on 565 or 888 encoding)
+  uint8_t greenVal = is565 ? (val >> 5)  & 0b111111 : (val >> 8)  & 0xFF;      // Calculate the green value (depending on 565 or 888 encoding)
+  uint8_t blueVal  = is565 ? (val >> 0)  & 0b11111  : (val >> 0)  & 0xFF;      // Calculate the blue value (depending on 565 or 888 encoding)
+  uint16_t color_565 = is565 ? val & 0xFFFF : ( ((redVal >> 3) << 11) | ((greenVal >> 2)<<5) | (blueVal >> 3) ); // Calculate a new 565 color from the separate RGB values
+
+  char buffer[3] = {0};                                                        // Create a character buffer to hold the R/G/B string values
+
+  sprintf(buffer, "%02X", redVal);                                                                  // Write out the red value into the buffer as a hex value
+  drawString( x, y+3, 30, 24, 3, 1,  COLOR_RED,   ST77XX_BLACK, true, buffer, 2 );                  // Draw the red value to the screen
+  drawProgressBar(x+40, y+15, 80, 4, COLOR_RED,   COLOR_NUM_BG, is565 ? redVal << 3 : redVal );     // Draw the red progress bar to the screen
+
+  sprintf(buffer, "%02X", greenVal);                                                                // Write out the green value into the buffer as a hex value
+  drawString( x, y+38, 30, 24, 3, 1, COLOR_GREEN, ST77XX_BLACK, true, buffer, 2 );                  // Draw the green value to the screen
+  drawProgressBar(x+40, y+50, 80, 4, COLOR_GREEN, COLOR_NUM_BG, is565 ? greenVal << 2 : greenVal ); // Draw the green progress bar to the screen
+
+  sprintf(buffer, "%02X", blueVal);                                                                 // Write out the blue value into the buffer as a hex value
+  drawString( x, y+73, 30, 24, 3, 1, COLOR_BLUE,  ST77XX_BLACK, true, buffer, 2 );                  // Draw the blue value to the screen
+  drawProgressBar(x+40, y+85, 80, 4, COLOR_BLUE,  COLOR_NUM_BG, is565 ? blueVal << 3 : blueVal );   // Draw the blue progress bar to the screen
+
+  fillBox( x+130, y+10, 100, 100, color_565 );                                 // Fill the Color Swatch
 }
 
 
@@ -754,16 +617,19 @@ void drawColorMenu( uint8_t x, uint8_t y){
 
 void renderScreen(){
 
-    bool refreshBase    = calc.base != old_base;
-    bool refreshBitMode = calc.bitDepth != old_bit_depth;
-    bool refreshColor   = calc.color_mode != old_color_mode;
-    bool refreshOp      = calc.op_command != old_op;
-    bool refreshValue   = calc.val_current != old_val;
-    bool refreshStored  = calc.val_stored != old_stored;
-    bool refreshBottom  = menu_mode != old_menu_mode;
-    bool refreshBin     = refreshBase || refreshBitMode || refreshBottom;
+    bool refreshBase    = calc.base != old_base;                               // See if the base changed
+    bool refreshBitMode = calc.bitDepth != old_bit_depth;                      // See if the bit depth changed
+    bool refreshColor   = calc.color_mode != old_color_mode;                   // See if the color mode changed
+    bool refreshOp      = calc.op_command != old_op;                           // See if the operator command changed
+    bool refreshValue   = calc.val_current != old_val;                         // See if the current value changed
+    bool refreshStored  = calc.val_stored != old_stored;                       // See if the stored value changed
+    bool refreshBottom  = menu_mode != old_menu_mode;                          // See if the menu mode changed
+    bool refreshBin     = refreshBase || refreshBitMode || refreshBottom;      // See if we need to update the binary info
 
-    if( refreshBase || refreshColor || refreshBottom ){
+    digitalWrite(PIN_SCREEN_DC, HIGH);                                         // Set the DC line High so we can send data to the screen
+    SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));          // Run the SPI transaction at 20 MHZ
+
+    if( refreshBase || refreshColor || refreshBottom ){                        // Update the tags at the top of the screen depending on the mode
       drawTag( 0,   0, 1, 2, (menu_mode != MENU_COLOR) && (calc.base ==  8) ? COLOR_OCT_FG : COLOR_GHOST, ST77XX_BLACK, "OCT", 3 );
       drawTag( 35,  0, 1, 2, (menu_mode != MENU_COLOR) && (calc.base == 10) ? COLOR_DEC_FG : COLOR_GHOST, ST77XX_BLACK, "DEC", 3 );
       drawTag( 70,  0, 1, 2, (menu_mode != MENU_COLOR) && (calc.base == 16) ? COLOR_HEX_FG : COLOR_GHOST, ST77XX_BLACK, "HEX", 3 );
@@ -771,15 +637,14 @@ void renderScreen(){
       drawTag( 205, 0, 1, 2, (menu_mode == MENU_COLOR) && (calc.color_mode == RGB_565) ? COLOR_COL_FG : COLOR_GHOST, ST77XX_BLACK, "565", 3 );
     }
 
-    if( refreshValue || refreshBase || refreshColor || refreshBitMode ) drawLargeNumber();
-    if( refreshStored || refreshBase || refreshColor || refreshBitMode ) drawSmallNumber( calc.base, 0, 20, COLOR_COL_FG, calc.val_stored );
+    if( refreshValue || refreshBase || refreshColor || refreshBitMode ) drawLargeNumber( calc.base, 0, 54, 240, 56, base_color, calc.val_current );   // Update the current val 
+    if( refreshStored || refreshBase || refreshColor || refreshBitMode ) drawSmallNumber( calc.base, 0, 20, 180, 28, COLOR_COL_FG, calc.val_stored ); // Update the stored val
 
-    if( refreshOp ){
-      screen.setAddrWindow( 190, 30, 30, 16 );
-      for( uint16_t i = 30*16; i>0; i--){ screen.SPI_WRITE16( ST77XX_BLACK ); }
+    if( refreshOp ){                                                           // See if we need to refresh the operator widget
+      fillBox( 190, 30, 30, 16, ST77XX_BLACK );                                // Blank out the left side of the widget since the operator changes size
 
-      switch(  calc.op_command ){
-        case OP_NONE:        drawTag( 240, 30, 2, 2, ST77XX_BLACK, ST77XX_BLACK, " ",   1, true ); break;
+      switch(  calc.op_command ){                                              // Based on the current operator command
+        case OP_NONE:        drawTag( 240, 30, 2, 2, ST77XX_BLACK, ST77XX_BLACK, " ",   1, true ); break; // Draw the operator tag
         case OP_PLUS:        drawTag( 240, 30, 2, 2, COLOR_GHOST,  COLOR_COL_FG, "+",   1, true ); break;
         case OP_MINUS:       drawTag( 240, 30, 2, 2, COLOR_GHOST,  COLOR_COL_FG, "-",   1, true ); break;
         case OP_MULTIPLY:    drawTag( 240, 30, 2, 2, COLOR_GHOST,  COLOR_COL_FG, "X",   1, true ); break;
@@ -796,46 +661,38 @@ void renderScreen(){
       }
     }
 
-    if( refreshBottom || refreshBitMode || refreshBase ){
-      digitalWrite(PIN_SCREEN_DC, HIGH);                                           // Set the DC line High so we can send data to the screen
-      screen.setAddrWindow( 0, 120, SCREEN_WIDTH, 120 );                           // Set the address area of the window to fill
-      SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));            // Run the SPI transaction at 8MHZ
-      for( uint16_t i = SCREEN_WIDTH * 120; i>0; i--){
-        screen.SPI_WRITE16( ST77XX_BLACK );    
-      }
-    }
+    if( refreshBottom || refreshBitMode || refreshBase ){ fillBox(0, 120, SCREEN_WIDTH, 120, ST77XX_BLACK); } // If we need a full redo of the bottom of the screen, blank it out
 
-    switch( menu_mode ){
-      case MENU_BINARY:
-        if( refreshBin || refreshValue ){
-          if( calc.base == 16 )     drawBinary( 0, 130, refreshBin );
-          else if( calc.base == 8 ) drawOctalBinary( 0, 130, refreshBin );
+    switch( menu_mode ){                                                                     // Based on the menu mode
+      case MENU_BINARY:                                                                      // If it's a binary menu (HEX / OCTAL)
+        if( refreshBin || refreshValue ){                                                    // If the binary number of value changed
+          if( calc.base == 16 )     drawHexBinary( 0, 130, refreshBin, calc.val_current );   // If hex mode, draw the binary number in hex mode
+          else if( calc.base == 8 ) drawOctalBinary( 0, 130, refreshBin, calc.val_current ); // If oct mode, draw the binary number in oct mode
         }
         break;
-      case MENU_DEC:
-        drawChar( 0, 140, 2, 2, 0, COLOR_HEX_FG, ST77XX_BLACK, "HEX:", 4 );
-        drawSmallNumber( 16, 50, 126, COLOR_HEX_FG, calc.val_current );
 
-        drawChar( 0, 184, 2, 2, 0, COLOR_OCT_FG, ST77XX_BLACK, "OCT:", 4 );
-        drawSmallNumber( 8, 50, 170, COLOR_OCT_FG, calc.val_current );
+      case MENU_DEC:                                                                         // If it's the decimal menu
+        drawString( 0, 130, 60, 24, 2, 1, COLOR_HEX_FG, ST77XX_BLACK, false, "HEX:", 4 );    // Create a label for "HEX:"
+        drawSmallNumber( 16, 60, 126, 170, 28, COLOR_HEX_FG, calc.val_current );             // Draw the hex representation for the decimal number
 
+        drawString( 0, 174, 60, 24, 2, 1, COLOR_OCT_FG, ST77XX_BLACK, false, "OCT:", 4 );    // Create a label for "OCT:"
+        drawSmallNumber( 8, 60, 170, 170, 28, COLOR_OCT_FG, calc.val_current );              // Draw the octal representation for the decimal number
         break;
-      case MENU_COLOR:
-        drawColorMenu(0, 120);
+
+      case MENU_COLOR:                                                                       // If it's the color menu
+        drawColorMenu( 0, 120, calc.color_mode == RGB_565, calc.val_current );               // Draw the color menu
         break;
     }
 
-    old_val        = calc.val_current;
-    old_stored     = calc.val_stored;
+    old_val        = calc.val_current;                                                       // Store the various values so we can see if they changed
+    old_stored     = calc.val_stored;                                                        // when it's time to render the screen again
     old_base       = calc.base;
     old_color_mode = calc.color_mode;
     old_bit_depth  = calc.bitDepth;
     old_menu_mode  = menu_mode;
 
+    SPI.endTransaction();                                                                    // End the SPI transaction
 }
-
-
-
 
 /*******************************************
 * Program Loop Function                    *
