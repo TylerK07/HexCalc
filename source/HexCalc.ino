@@ -92,8 +92,17 @@ uint8_t  old_bit_depth  = 0xFF;                                                /
 volatile uint8_t menu_mode = 0;                                                // Tracks which mode the menu is in (BINARY / DEC / COLOR)
 volatile uint8_t old_menu_mode = 0xFF;                                         // Tracks the old menu mode to identify changes in the mode between refreshes
 
+uint32_t screen_shutoff_time = 0;                                              // The time that the screen should shut off
+#define SCREEN_SHUTOFF_DELAY 30000                                             // Make the screen shutoff time 30 seconds
+
 void manageKeyPress(){                                                         // Keypress Event Handler Function
+  if( millis() > screen_shutoff_time ){                                        // See if the screen is currently shut off
+    screen_shutoff_time = millis() + SCREEN_SHUTOFF_DELAY;                     // Reset the shutoff timer
+    return;                                                                    // Exit out of the keypress. (This just turns the screen back on)
+  }
+
   bool refresh_screen = true;                                                  // Assume that we need to refresh the screen
+  screen_shutoff_time = millis() + SCREEN_SHUTOFF_DELAY;                       // Reset the shutoff timer with every keypress
 
   switch( hw.last_pressed_key ){                                               // Check the value of the last pressed key
     case KEY_0:         calc.enterDigit(0);     break;                         // If the user pressed a number key, then 
@@ -175,6 +184,7 @@ void setup() {
   screen.init(SCREEN_WIDTH, SCREEN_HEIGHT, SPI_MODE2);                         // Initialize the screen
   pinMode( PIN_SCREEN_BLK, OUTPUT );                                           // Set the backlight pin to output mode
   digitalWrite( PIN_SCREEN_BLK, HIGH );                                        // Turn the screen's backlight on
+  screen_shutoff_time = millis() + SCREEN_SHUTOFF_DELAY;                       // Set the shutoff timer
 
   delay(10);                                                                   // Give everything a few ms to get situated
   screen.setRotation(3);                                                       // Set the screen rotation to 270 degrees
@@ -700,4 +710,9 @@ void renderScreen(){
 
 void loop() {
   hw.processEvents();
+  if( millis() > screen_shutoff_time ){                                        // If the timer has breached the shutoff time
+    digitalWrite( PIN_SCREEN_BLK, LOW );                                       // Turn the screen's backlight off
+  } else {                                                                     // Otherwise
+    digitalWrite( PIN_SCREEN_BLK, HIGH );                                      // Turn the screen's backlight on
+  }
 }
